@@ -49,10 +49,25 @@ public class CatalogEventDispatcher {
                         .forEach(l -> listeners.remove(l));
     }
 
+    static long[] delays = new long[100];
+
+    public static void resetDelay() {
+        delays = new long[100];
+    }
+
+    public static void printDelay() {
+        for (int i = 0; i < 14; i++) {
+            System.err.println("     listener " + i + " took " + delays[i] + " ms.");
+        }
+    }
+
     public void dispatch(CatalogEvent event) {
         CatalogException toThrow = null;
 
+        int i = 0;
+        long start;
         for (CatalogListener listener : listeners) {
+            start = System.currentTimeMillis();
             try {
                 if (event instanceof CatalogAddEvent) {
                     listener.handleAddEvent((CatalogAddEvent) event);
@@ -73,6 +88,8 @@ public class CatalogEventDispatcher {
                             Level.WARNING, "Catalog listener threw exception handling event.", t);
                 }
             }
+            delays[i] = delays[i] + System.currentTimeMillis() - start;
+            i++;
         }
 
         if (toThrow != null) {

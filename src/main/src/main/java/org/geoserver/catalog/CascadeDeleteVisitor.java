@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import org.geoserver.catalog.impl.CatalogEventDispatcher;
 import org.geoserver.catalog.impl.LayerGroupStyle;
 import org.geoserver.catalog.util.CloseableIterator;
 import org.geotools.util.logging.Logging;
@@ -45,27 +46,82 @@ public class CascadeDeleteVisitor implements CatalogVisitor {
     public void visit(WorkspaceInfo workspace) {
         // remove layer groups contained in this workspace. Do this first to speed up
         // visit(LayerInfo) looking for related groups
-        for (LayerGroupInfo group : catalog.getLayerGroupsByWorkspace(workspace)) {
+        long begin = System.currentTimeMillis();
+
+        List<LayerGroupInfo> layerGroupsByWorkspace = catalog.getLayerGroupsByWorkspace(workspace);
+
+        System.err.println(
+                "getLayerGroupsByWorkspace took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms. size is : "
+                        + layerGroupsByWorkspace.size());
+        begin = System.currentTimeMillis();
+
+        for (LayerGroupInfo group : layerGroupsByWorkspace) {
             group.accept(this);
         }
 
+        System.err.println(
+                "processing layerGroupsByWorkspace took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms.");
+        begin = System.currentTimeMillis();
+
         // remove owned stores
-        for (StoreInfo s : catalog.getStoresByWorkspace(workspace, StoreInfo.class)) {
+        List<StoreInfo> storesByWorkspace =
+                catalog.getStoresByWorkspace(workspace, StoreInfo.class);
+        System.err.println(
+                "getStoresByWorkspace took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms. size is : "
+                        + storesByWorkspace.size());
+        begin = System.currentTimeMillis();
+        CatalogEventDispatcher.resetDelay();
+        for (StoreInfo s : storesByWorkspace) {
             s.accept(this);
         }
+        System.err.println(
+                "processing storesByWorkspace took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms.");
+        CatalogEventDispatcher.printDelay();
+
+        begin = System.currentTimeMillis();
 
         // remove any linked namespaces
         NamespaceInfo ns = catalog.getNamespaceByPrefix(workspace.getName());
+        System.err.println(
+                "getNamespaceByPrefix took: " + (System.currentTimeMillis() - begin) + " ms.");
+        begin = System.currentTimeMillis();
+
         if (ns != null) {
             ns.accept(this);
         }
+        System.err.println(
+                "processing namespaceByPrefix took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms.");
+        begin = System.currentTimeMillis();
 
         // remove styles contained in this workspace
-        for (StyleInfo style : catalog.getStylesByWorkspace(workspace)) {
+        List<StyleInfo> stylesByWorkspace = catalog.getStylesByWorkspace(workspace);
+        System.err.println(
+                "getStylesByWorkspace took: "
+                        + (System.currentTimeMillis() - begin)
+                        + " ms. size is : "
+                        + stylesByWorkspace.size());
+        begin = System.currentTimeMillis();
+        CatalogEventDispatcher.resetDelay();
+        for (StyleInfo style : stylesByWorkspace) {
             style.accept(this);
         }
+        System.err.println(
+                "processing stylesByWorkspace took: " + (System.currentTimeMillis() - begin));
+        CatalogEventDispatcher.printDelay();
+        begin = System.currentTimeMillis();
 
         catalog.remove(workspace);
+        System.err.println("processing remove took: " + (System.currentTimeMillis() - begin));
     }
 
     @Override
