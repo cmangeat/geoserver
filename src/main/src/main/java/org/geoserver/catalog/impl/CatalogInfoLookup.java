@@ -34,8 +34,8 @@ import org.opengis.feature.type.Name;
 class CatalogInfoLookup<T extends CatalogInfo> {
     static final Logger LOGGER = Logging.getLogger(CatalogInfoLookup.class);
 
-    ConcurrentHashMap<Class<T>, Map<String, T>> idMultiMap = new ConcurrentHashMap<>();
-    ConcurrentHashMap<Class<T>, Map<Name, T>> nameMultiMap = new ConcurrentHashMap<>();
+    Map<Class<T>, Map<String, T>> idMultiMap = new ConcurrentHashMap<>();
+    Map<Class<T>, Map<Name, T>> nameMultiMap = new ConcurrentHashMap<>();
     Function<T, Name> nameMapper;
     static final Predicate<?> TRUE = x -> true;
 
@@ -50,7 +50,7 @@ class CatalogInfoLookup<T extends CatalogInfo> {
     }
 
     @SuppressWarnings("unchecked")
-    <K> Map<K, T> getMapForValue(ConcurrentHashMap<Class<T>, Map<K, T>> maps, T value) {
+    <K> Map<K, T> getMapForValue(Map<Class<T>, Map<K, T>> maps, T value) {
         Class<T> vc;
         if (Proxy.isProxyClass(value.getClass())) {
             ModificationProxy h = (ModificationProxy) Proxy.getInvocationHandler(value);
@@ -68,8 +68,7 @@ class CatalogInfoLookup<T extends CatalogInfo> {
     // contains LayerInfoImpl (extracted from the values) but the container is parameterized
     // by LayerInfo. I suppose it could be solved by having a mapping function going from class
     // to key class (LayerInfoImpl to LayerInfo) and use it consistently across the lookup?
-    protected <K> Map<K, T> getMapForValue(
-            ConcurrentHashMap<Class<T>, Map<K, T>> maps, Class<?> vc) {
+    protected <K> Map<K, T> getMapForValue(Map<Class<T>, Map<K, T>> maps, Class<?> vc) {
         Map<K, T> vcMap = maps.get(vc);
         if (vcMap == null) {
             @SuppressWarnings("unchecked")
