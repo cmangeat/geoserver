@@ -8,8 +8,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.function.Function;
@@ -18,7 +20,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.geoserver.catalog.Catalog;
 import org.geoserver.catalog.CatalogInfo;
+import org.geoserver.catalog.LayerInfo;
+import org.geoserver.catalog.ResourceInfo;
 import org.geoserver.ows.util.OwsUtils;
+import org.geotools.feature.NameImpl;
 import org.geotools.util.logging.Logging;
 import org.opengis.feature.type.Name;
 
@@ -31,11 +36,12 @@ import org.opengis.feature.type.Name;
  *
  * @param <T>
  */
-class CatalogInfoLookup<T extends CatalogInfo> {
+public class CatalogInfoLookup<T extends CatalogInfo> {
     static final Logger LOGGER = Logging.getLogger(CatalogInfoLookup.class);
 
     Map<Class<T>, Map<String, T>> idMultiMap = new ConcurrentHashMap<>();
     Map<Class<T>, Map<Name, T>> nameMultiMap = new ConcurrentHashMap<>();
+    Map<Class<T>, Map<String, Set<T>>> workspaceMultiSet = new ConcurrentHashMap<>();
     Function<T, Name> nameMapper;
     static final Predicate<?> TRUE = x -> true;
 
@@ -78,6 +84,27 @@ class CatalogInfoLookup<T extends CatalogInfo> {
         return vcMap;
     }
 
+    protected Map<String, Set<T>> getSetForValue(Map<Class<T>, Map<String, Set<T>>> maps, T value) {
+        Class<T> vc;
+        if (Proxy.isProxyClass(value.getClass())) {
+            ModificationProxy h = (ModificationProxy) Proxy.getInvocationHandler(value);
+            T po = (T) h.getProxyObject();
+            vc = (Class<T>) po.getClass();
+        } else {
+            vc = (Class<T>) value.getClass();
+        }
+
+        Map<String, Set<T>> vcMap = maps.get(vc);
+        if (vcMap == null) {
+            @SuppressWarnings("unchecked")
+            Class<T> uncheked = (Class<T>) vc;
+            vcMap =
+                    maps.computeIfAbsent(
+                            uncheked, k -> new ConcurrentSkipListMap<String, Set<T>>());
+        }
+        return vcMap;
+    }
+
     @SuppressWarnings("unchecked")
     public T add(T value) {
         if (Proxy.isProxyClass(value.getClass())) {
@@ -85,10 +112,35 @@ class CatalogInfoLookup<T extends CatalogInfo> {
             value = (T) h.getProxyObject();
         }
         Map<Name, T> nameMap = getMapForValue(nameMultiMap, value);
+        Map<String, Set<T>> workspaceMap = getSetForValue(workspaceMultiSet, value);
         Name name = nameMapper.apply(value);
+        String wkName = nameFromNameOrValue(value, name);
+
+        Set<T> set;
+        if (!workspaceMap.containsKey(wkName)) {
+            set = new HashSet<>();
+            workspaceMap.put(wkName, set);
+        } else {
+            set = workspaceMap.get(wkName);
+        }
         nameMap.put(name, value);
+        set.add(value);
         Map<String, T> idMap = getMapForValue(idMultiMap, value);
         return idMap.put(value.getId(), value);
+    }
+
+    private String nameFromNameOrValue(T value, Name name) {
+        String wkName =
+                name.getNamespaceURI() == null
+                        ? ((NameImpl) name).getURI()
+                        : name.getNamespaceURI();
+        if (value instanceof ResourceInfo) {
+            wkName = ((ResourceInfo) value).getStore().getWorkspace().getId();
+        }
+        if (value instanceof LayerInfo) {
+            wkName = ((LayerInfo) value).getResource().getStore().getWorkspace().getId();
+        }
+        return wkName;
     }
 
     public Collection<T> values() {
@@ -104,6 +156,12 @@ class CatalogInfoLookup<T extends CatalogInfo> {
         Name name = nameMapper.apply(value);
         Map<Name, T> nameMap = getMapForValue(nameMultiMap, value);
         nameMap.remove(name);
+        String wkName = nameFromNameOrValue(value, name);
+        Map<String, Set<T>> workspaceMap = getSetForValue(workspaceMultiSet, value);
+        if (workspaceMap.containsKey(wkName)) {
+            workspaceMap.get(wkName).remove(value);
+        }
+
         Map<String, T> idMap = getMapForValue(idMultiMap, value);
         return idMap.remove(value.getId());
     }
@@ -136,23 +194,41 @@ class CatalogInfoLookup<T extends CatalogInfo> {
      * with 20k layers go down from 50s to 44s (which is a lot, considering there is a lot of other
      * things going on)
      */
+    public static String uri;
+
     <U extends CatalogInfo> List<U> list(Class<U> clazz, Predicate<U> predicate) {
         ArrayList<U> result = new ArrayList<>();
-        for (Class<T> key : nameMultiMap.keySet()) {
-            if (clazz.isAssignableFrom(key)) {
-                Map<Name, T> valueMap = nameMultiMap.get(key);
-                if (valueMap != null) {
-                    for (T v : valueMap.values()) {
-                        @SuppressWarnings("unchecked")
-                        final U u = (U) v;
-                        if (predicate == TRUE || predicate.test(u)) {
-                            result.add(u);
+        if (uri == null) {
+            for (Class<T> key : nameMultiMap.keySet()) {
+                if (clazz.isAssignableFrom(key)) {
+                    Map<Name, T> valueMap = nameMultiMap.get(key);
+                    if (valueMap != null) {
+                        for (T v : valueMap.values()) {
+                            @SuppressWarnings("unchecked")
+                            final U u = (U) v;
+                            if (predicate == TRUE || predicate.test(u)) {
+                                result.add(u);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for (Class<T> key : workspaceMultiSet.keySet()) {
+                if (clazz.isAssignableFrom(key)) {
+                    Set<T> valueMap = workspaceMultiSet.get(key).get(uri);
+                    if (valueMap != null) {
+                        for (T v : valueMap) {
+                            @SuppressWarnings("unchecked")
+                            final U u = (U) v;
+                            if (predicate == TRUE || predicate.test(u)) {
+                                result.add(u);
+                            }
                         }
                     }
                 }
             }
         }
-
         return result;
     }
 

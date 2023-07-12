@@ -55,6 +55,8 @@ public class CatalogEventDispatcher {
         delays = new long[100];
     }
 
+    public static int deleteCount = 0;
+
     public static void printDelay() {
         for (int i = 0; i < 14; i++) {
             System.err.println("     listener " + i + " took " + delays[i] + " ms.");
@@ -63,6 +65,10 @@ public class CatalogEventDispatcher {
 
     public void dispatch(CatalogEvent event) {
         CatalogException toThrow = null;
+
+        if (event instanceof CatalogRemoveEvent) {
+            deleteCount++;
+        }
 
         int i = 0;
         long start;

@@ -12,6 +12,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import org.geoserver.catalog.impl.CatalogEventDispatcher;
+import org.geoserver.catalog.impl.CatalogInfoLookup;
 import org.geoserver.catalog.impl.LayerGroupStyle;
 import org.geoserver.catalog.util.CloseableIterator;
 import org.geotools.util.logging.Logging;
@@ -48,6 +49,8 @@ public class CascadeDeleteVisitor implements CatalogVisitor {
         // visit(LayerInfo) looking for related groups
         long begin = System.currentTimeMillis();
 
+        CatalogInfoLookup.uri = workspace.getId();
+        CatalogEventDispatcher.deleteCount = 0;
         List<LayerGroupInfo> layerGroupsByWorkspace = catalog.getLayerGroupsByWorkspace(workspace);
 
         System.err.println(
@@ -120,8 +123,11 @@ public class CascadeDeleteVisitor implements CatalogVisitor {
         CatalogEventDispatcher.printDelay();
         begin = System.currentTimeMillis();
 
+        CatalogInfoLookup.uri = null;
         catalog.remove(workspace);
         System.err.println("processing remove took: " + (System.currentTimeMillis() - begin));
+        System.err.println(
+                "delete count: " + CatalogEventDispatcher.deleteCount + " (took: for grep)");
     }
 
     @Override
