@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.geoserver.catalog.util.CloseableIterator;
+import org.geoserver.catalog.util.LocalWorkspaceForDeletion;
 import org.geotools.util.logging.Logging;
 import org.opengis.filter.Filter;
 import org.opengis.filter.MultiValuedFilter.MatchAction;
@@ -38,6 +39,11 @@ public class CascadeDeleteVisitor implements CatalogVisitor {
     public void visit(Catalog catalog) {}
 
     public void visit(WorkspaceInfo workspace) {
+
+        try {
+
+        LocalWorkspaceForDeletion.set(workspace);
+
         // remove layer groups contained in this workspace. Do this first to speed up
         // visit(LayerInfo) looking for related groups
         for (LayerGroupInfo group : catalog.getLayerGroupsByWorkspace(workspace)) {
@@ -60,6 +66,11 @@ public class CascadeDeleteVisitor implements CatalogVisitor {
             style.accept(this);
         }
 
+        }
+
+        finally {
+            LocalWorkspaceForDeletion.remove();
+        }
         catalog.remove(workspace);
     }
 
