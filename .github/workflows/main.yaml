@@ -21,9 +21,13 @@ jobs:
       with:
         java-version: 1.8
 
-      
     - name: Build and test 
       working-directory: src 
       run: |
         mvn clean install
 
+    - name: publish war 
+      uses: actions/upload-artifact@v3
+      with:
+        name: war 
+        path: ./src/web/app/target/geoserver.war        
